@@ -34,7 +34,7 @@ This is required before any Prisma migrate/push command. Prisma v7 reads `DATABA
 
 ```bash
 npm install
-npx prisma generate
+npx prisma migrate dev --name init
 npm run dev
 ```
 
