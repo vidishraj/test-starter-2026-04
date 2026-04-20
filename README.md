@@ -2,12 +2,15 @@
 
 Fork or clone this repository to begin the paid engineering test. You have **3.5 hours wall-clock** inside the agreed window — git commit timestamps will be audited.
 
+**The full test spec is in [`TEST_SPEC.md`](./TEST_SPEC.md).** Read it before the clock starts.
+
 ---
 
 ## What's in here
 
 | Path | Description |
 |------|-------------|
+| `TEST_SPEC.md` | **The actual test requirements (Parts 1–5, W1–W5, deliverables)** |
 | `src/` | Next.js App Router + TypeScript + Tailwind scaffold |
 | `prisma/schema.prisma` | Minimal Prisma schema (SQLite) — extend it |
 | `data/listings.json` | 25 synthetic NYC office listings |
@@ -43,7 +46,9 @@ Open [http://localhost:3000](http://localhost:3000). The homepage placeholder te
 
 ---
 
-## Scope
+## Scope at a glance
+
+See [`TEST_SPEC.md`](./TEST_SPEC.md) for full detail.
 
 | Part | What | Time |
 |------|------|------|
