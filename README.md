@@ -42,7 +42,7 @@ Open [http://localhost:3000](http://localhost:3000). The homepage placeholder te
 
 > **Stack note:** this starter uses **Next.js 16, React 19, Prisma 7, and Tailwind 4**. Some APIs differ from earlier major versions — notably:
 >
-> - **Prisma's generated client** now lives at `src/generated/prisma` (not `@prisma/client`). Import from `src/generated/prisma`.
+> - **Prisma's generated client** now lives at `src/generated/prisma` (not `@prisma/client`). Import from `src/generated/prisma` — the `@prisma/client` package is NOT installed; attempting to import from it will fail at typecheck.
 > - **`DATABASE_URL` is read from `prisma.config.ts`, not from `schema.prisma`.** Do NOT add `url = env("DATABASE_URL")` to `schema.prisma` — Prisma 7 will error with a duplicate-datasource-url message. The `url` lives exclusively in `prisma.config.ts`, which reads `process.env.DATABASE_URL` from your `.env` file.
 >
 > If something behaves differently than you expect, consult the [Next.js 16 docs](https://nextjs.org/docs) or the [Prisma v7 docs](https://www.prisma.io/docs).
@@ -61,23 +61,19 @@ To switch from SQLite to Postgres:
 
 **Step 1.** In `prisma/schema.prisma`, change `provider = "sqlite"` to `provider = "postgresql"`.
 
-**Step 2.** In your Vercel project dashboard → Settings → Environment Variables, add `DATABASE_URL` with your Neon connection string.
+**Step 2.** Delete the existing migrations folder — the files in `prisma/migrations/` were generated against SQLite in "Running locally" Step 2 (with `AUTOINCREMENT` / `DATETIME` syntax) and will fail on Postgres:
+- macOS/Linux: `rm -rf prisma/migrations/`
+- Windows: `rmdir /s /q prisma\migrations`
 
-> ⚠️ **Important — dialect switch:** you already ran `prisma migrate dev` against SQLite in "Running locally" Step 2, so the migrations in `prisma/migrations/` are SQLite-flavored (`AUTOINCREMENT`, `DATETIME`) and will fail on Postgres. Before doing Step 3:
->
-> 1. Delete the existing migrations folder:
->    - macOS/Linux: `rm -rf prisma/migrations/`
->    - Windows: `rmdir /s /q prisma\migrations`
-> 2. Update your local `.env` so `DATABASE_URL` points at your Neon connection string. Use Neon's **direct** (unpooled) connection — not the pooled/pgbouncer one — or migrations will fail. Format: `postgresql://user:pass@host/db?sslmode=require`.
->
->    After committing the Postgres-flavored migrations, keep your local `.env` pointed at Neon for the rest of the test. Swapping back to SQLite locally will cause provider-mismatch errors on the next `prisma migrate dev` against the committed Postgres migrations.
-> 3. Proceed with Step 3 below. `prisma migrate dev` will now generate Postgres-flavored migrations.
+**Step 3.** Point your local `.env` `DATABASE_URL` at your Neon **direct** (unpooled) connection string — NOT the pooled/pgbouncer one, or migrations will fail. Format: `postgresql://user:pass@host/db?sslmode=require`. Keep your local `.env` on Neon for the rest of the test — swapping back to SQLite locally will cause provider-mismatch errors on the next `prisma migrate dev`.
 
-**Step 3.** Run `npx prisma migrate dev --name init` locally once to generate the migration files in `prisma/migrations/` — commit those files. On Vercel, the build script runs `prisma migrate deploy` to apply them.
+**Step 4.** In your Vercel project dashboard → Settings → Environment Variables, add `DATABASE_URL` with your Neon connection string (the direct connection is fine here too).
 
-**Step 4.** On Vercel, `prisma migrate deploy` runs automatically during build (via the updated `build` script in `package.json`).
+**Step 5.** Run `npx prisma migrate dev --name init` locally to generate fresh Postgres-flavored migration files in `prisma/migrations/` — commit those files.
 
-**Step 5.** Make sure Vercel's Deployment Protection is OFF for this project (Settings → Deployment Protection → None) so the deploy URL is publicly accessible — your submission requires a public URL, not one behind SSO or a password.
+**Step 6.** On Vercel, `prisma migrate deploy` runs automatically during build (via the updated `build` script in `package.json`) to apply them.
+
+**Step 7.** Make sure Vercel's Deployment Protection is OFF for this project (Settings → Deployment Protection → None) so the deploy URL is publicly accessible — your submission requires a public URL, not one behind SSO or a password.
 
 ---
 
