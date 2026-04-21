@@ -1,4 +1,10 @@
+import Link from "next/link";
 import HeroSearch from "@/components/hero-search";
+import {
+  SUBMARKETS,
+  SUBMARKET_SLUGS,
+  listingsInSubmarket,
+} from "@/lib/listings";
 
 const EXAMPLE_CHIPS = [
   "Tech startup in Hudson Yards",
@@ -28,15 +34,22 @@ const WEBSITE_JSONLD = {
 };
 
 export default function Home() {
+  const topSubmarkets = SUBMARKETS.map((s) => ({
+    name: s,
+    slug: SUBMARKET_SLUGS[s],
+    count: listingsInSubmarket(s).length,
+  }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+
   return (
     <>
       <script
         type="application/ld+json"
-        // Server-rendered. Known-safe structured data, not user-supplied.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSONLD) }}
       />
       <main className="flex-1">
-        <section className="mx-auto max-w-5xl px-6 pt-20 pb-24 sm:pt-28 sm:pb-32">
+        <section className="mx-auto max-w-5xl px-6 pt-20 pb-16 sm:pt-28 sm:pb-20">
           <p className="text-xs uppercase tracking-[0.18em] text-accent font-medium">
             NYC office search · chat-first
           </p>
@@ -61,6 +74,37 @@ export default function Home() {
             <Stat k="2,200–24,500" v="SF range" />
             <Stat k="< 2s" v="From prompt to results" />
           </dl>
+        </section>
+
+        <section className="mx-auto max-w-5xl px-6 pb-24 sm:pb-32">
+          <div className="flex items-end justify-between border-b border-border pb-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-2">
+              Or browse by submarket
+            </p>
+            <Link
+              href="/office-space"
+              className="text-sm text-muted hover:text-fg transition-colors"
+            >
+              See all →
+            </Link>
+          </div>
+          <ul className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {topSubmarkets.map((s) => (
+              <li key={s.slug}>
+                <Link
+                  href={`/office-space/${s.slug}`}
+                  className="flex items-baseline justify-between rounded-2xl border border-border bg-bg-elevated px-5 py-4 hover:border-ink/40 transition-colors"
+                >
+                  <span className="font-display text-lg tracking-tight text-ink">
+                    {s.name}
+                  </span>
+                  <span className="font-mono text-xs text-muted-2">
+                    {s.count}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       </main>
     </>

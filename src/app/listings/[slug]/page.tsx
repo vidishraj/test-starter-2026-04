@@ -8,6 +8,8 @@ import {
   formatSf,
   formatPricePerSf,
   formatAnnualRent,
+  SUBMARKET_SLUGS,
+  normalizeSubmarket,
 } from "@/lib/listings";
 
 type Params = { slug: string };
@@ -121,9 +123,21 @@ export default async function ListingPage({
         <nav className="text-xs uppercase tracking-[0.14em] text-muted-2">
           <Link href="/" className="hover:text-fg">Home</Link>
           <span className="mx-2">/</span>
-          <Link href="/search" className="hover:text-fg">Search</Link>
+          <Link href="/office-space" className="hover:text-fg">Office space</Link>
           <span className="mx-2">/</span>
-          <span className="text-muted">{listing.submarket}</span>
+          {(() => {
+            const canonical = normalizeSubmarket(listing.submarket);
+            return canonical ? (
+              <Link
+                href={`/office-space/${SUBMARKET_SLUGS[canonical]}`}
+                className="hover:text-fg"
+              >
+                {canonical}
+              </Link>
+            ) : (
+              <span className="text-muted">{listing.submarket}</span>
+            );
+          })()}
         </nav>
       </div>
 

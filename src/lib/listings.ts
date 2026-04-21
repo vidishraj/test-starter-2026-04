@@ -113,6 +113,34 @@ export function findBySlug(slug: string): Listing | undefined {
   return LISTINGS.find((l) => l.slug === slug);
 }
 
+/**
+ * Canonical URL slug for each submarket. The inverse lookup collapses
+ * both `Grand Central` and `Grand Central Area` onto the same URL.
+ */
+export const SUBMARKET_SLUGS: Record<Submarket, string> = {
+  "Hudson Yards": "hudson-yards",
+  Flatiron: "flatiron",
+  FiDi: "fidi",
+  "Midtown East": "midtown-east",
+  "Midtown West": "midtown-west",
+  SoHo: "soho",
+  Tribeca: "tribeca",
+  "Penn Station": "penn-station",
+  "Grand Central": "grand-central",
+  Chelsea: "chelsea",
+};
+
+export function submarketFromSlug(slug: string): Submarket | null {
+  const entry = (Object.entries(SUBMARKET_SLUGS) as [Submarket, string][]).find(
+    ([, s]) => s === slug,
+  );
+  return entry ? entry[0] : null;
+}
+
+export function listingsInSubmarket(submarket: Submarket): Listing[] {
+  return LISTINGS.filter((l) => normalizeSubmarket(l.submarket) === submarket);
+}
+
 export function adjacentPhotos(listing: Listing): string[] {
   return [listing.heroImage, ...listing.photos, listing.floorplan];
 }
