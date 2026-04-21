@@ -1,3 +1,22 @@
+// Beyond the Space / PM platform — Prisma schema.
+//
+// Design notes:
+//   * Money is stored as Int cents everywhere. Phase-2 GL (a double-entry
+//     ledger) can map straight onto these values without a rewrite.
+//   * Every imported entity has an `externalId` from the source system —
+//     that's our idempotency key. Re-running an import is a no-op because
+//     upserts key off `externalId`.
+//   * Lease history is modeled as multiple Lease rows per Unit over time
+//     (no versioning in place). This gives clean point-in-time rent-roll
+//     queries and matches how Buildium/Appfolio/Yardi actually store it.
+//   * `accountRef` on Charge/Payment is the phase-2 GL bolt-on point —
+//     null today; populated when the double-entry ledger ships.
+//   * `ImportRun.payload` is a JSON blob that acts as both (a) a staging
+//     area between the preview screen and the commit button and (b) an
+//     audit trail of every import that's ever touched this tenant's data.
+//
+// DATABASE_URL lives in prisma.config.ts per Prisma 7.
+
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -7,7 +26,133 @@ datasource db {
   provider = "sqlite"
 }
 
-model StarterPlaceholder {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+model Building {
+  id             String   @id @default(cuid())
+  name           String
+  normalizedName String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  units Unit[]
+}
+
+model Unit {
+  id                String   @id @default(cuid())
+  externalId        String   @unique
+  buildingId        String
+  label             String
+  bedrooms          Int?
+  bathrooms         Float?
+  squareFeet        Int?
+  monthlyRentTarget Int?
+  status            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  building   Building    @relation(fields: [buildingId], references: [id])
+  leases     Lease[]
+  workOrders WorkOrder[]
+
+  @@unique([buildingId, label])
+}
+
+model Tenant {
+  id              String    @id @default(cuid())
+  externalId      String    @unique
+  firstName       String
+  lastName        String
+  email           String?
+  emailNormalized String?   @unique
+  phone           String?
+  dateOfBirth     DateTime?
+  status          String
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  leases Lease[]
+}
+
+model Lease {
+  id              String    @id @default(cuid())
+  externalId      String    @unique
+  unitId          String
+  tenantId        String
+  startDate       DateTime
+  endDate         DateTime?
+  monthlyRent     Int
+  securityDeposit Int?
+  status          String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  unit     Unit      @relation(fields: [unitId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  charges  Charge[]
+  payments Payment[]
+
+  @@index([unitId, startDate])
+  @@index([tenantId])
+}
+
+model Charge {
+  id          String   @id @default(cuid())
+  externalId  String   @unique
+  leaseId     String
+  chargeDate  DateTime
+  amount      Int
+  type        String
+  description String?
+  accountRef  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lease Lease @relation(fields: [leaseId], references: [id])
+
+  @@index([leaseId, chargeDate])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  externalId  String   @unique
+  leaseId     String
+  paymentDate DateTime
+  amount      Int
+  method      String?
+  notes       String?
+  accountRef  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lease Lease @relation(fields: [leaseId], references: [id])
+
+  @@index([leaseId, paymentDate])
+}
+
+model WorkOrder {
+  id          String    @id @default(cuid())
+  externalId  String    @unique
+  unitId      String
+  openedDate  DateTime
+  closedDate  DateTime?
+  status      String
+  category    String
+  description String
+  vendorName  String
+  cost        Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  unit Unit @relation(fields: [unitId], references: [id])
+
+  @@index([unitId, status])
+}
+
+model ImportRun {
+  id          String    @id @default(cuid())
+  source      String
+  startedAt   DateTime  @default(now())
+  committedAt DateTime?
+  stats       String
+  payload     String
 }
