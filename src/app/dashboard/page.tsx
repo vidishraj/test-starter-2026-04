@@ -20,6 +20,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Per-request SSR — dashboard state changes every time an import commits.
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   // Run every aggregation in parallel — they all hit the DB independently.
   const [kpis, rentRoll, arAging, expenses] = await Promise.all([
