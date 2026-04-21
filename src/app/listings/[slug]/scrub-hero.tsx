@@ -83,21 +83,34 @@ export default function ScrubHero({ slides, address, unit }: Props) {
 
     const down = (e: PointerEvent) => {
       if (e.pointerType !== "mouse") return;
+      // Avoid starting a drag on an interactive control (buttons for prev/next, dots)
+      const target = e.target as HTMLElement;
+      if (target.closest("button")) return;
       pointerId = e.pointerId;
       startX = e.clientX;
       startScroll = el.scrollLeft;
       setIsDragging(true);
-      el.setPointerCapture(e.pointerId);
+      // Disable scroll-snap while the user is actively dragging, otherwise
+      // Chrome / Safari fight the imperative scrollLeft by snapping back.
+      el.style.scrollSnapType = "none";
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture can fail on some touch devices — safe to ignore */
+      }
+      e.preventDefault();
     };
     const move = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
       el.scrollLeft = startScroll - (e.clientX - startX);
+      e.preventDefault();
     };
     const up = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
       pointerId = null;
       setIsDragging(false);
-      // Snap to nearest slide
+      // Restore scroll-snap and nudge to the nearest slide.
+      el.style.scrollSnapType = "";
       const slideWidth = el.clientWidth;
       const snapTo = Math.round(el.scrollLeft / slideWidth);
       el.scrollTo({ left: snapTo * slideWidth, behavior: "smooth" });

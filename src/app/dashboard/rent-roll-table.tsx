@@ -97,7 +97,7 @@ export default function RentRollTable({ rows }: { rows: Row[] }) {
           <tbody>
             {sorted.map((r) => (
               <tr key={r.leaseId} className="border-b border-border last:border-0 hover:bg-bg transition-colors">
-                <td className="px-4 py-3">
+                <td className="px-3 py-3 whitespace-nowrap">
                   <Link
                     href={`/dashboard/tenants/${r.tenantId}`}
                     className="text-ink hover:underline"
@@ -105,18 +105,30 @@ export default function RentRollTable({ rows }: { rows: Row[] }) {
                     {r.tenantName}
                   </Link>
                   {r.tenantEmail && (
-                    <div className="text-xs text-muted-2">{r.tenantEmail}</div>
+                    <div className="text-xs text-muted-2 truncate max-w-[220px]">
+                      {r.tenantEmail}
+                    </div>
                   )}
                 </td>
-                <td className="px-4 py-3 text-fg">{r.buildingName}</td>
-                <td className="px-4 py-3 font-mono text-muted">{r.unitLabel}</td>
-                <td className="px-4 py-3 text-right font-medium tabular-nums">${(r.monthlyRent / 100).toLocaleString()}</td>
-                <td className="px-4 py-3 text-muted tabular-nums">{r.startDateIso}</td>
-                <td className="px-4 py-3 text-muted tabular-nums">{r.endDateIso ?? "—"}</td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-3 text-fg whitespace-nowrap">
+                  {r.buildingName}
+                </td>
+                <td className="px-3 py-3 font-mono text-muted whitespace-nowrap">
+                  {r.unitLabel}
+                </td>
+                <td className="px-3 py-3 text-right font-medium tabular-nums whitespace-nowrap">
+                  ${(r.monthlyRent / 100).toLocaleString()}
+                </td>
+                <td className="px-3 py-3 text-muted tabular-nums whitespace-nowrap">
+                  {r.startDateIso}
+                </td>
+                <td className="px-3 py-3 text-muted tabular-nums whitespace-nowrap">
+                  {r.endDateIso ?? "—"}
+                </td>
+                <td className="px-3 py-3 whitespace-nowrap">
                   <StatusPill status={r.derivedStatus} />
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums">
+                <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
                   {r.outstandingCents > 0 ? (
                     <span className="text-accent font-medium">
                       ${(r.outstandingCents / 100).toLocaleString()}
