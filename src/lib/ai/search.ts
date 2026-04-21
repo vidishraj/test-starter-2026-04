@@ -29,12 +29,17 @@ import {
 
 const MODEL = "claude-haiku-4-5-20251001";
 
-const SYSTEM_PROMPT = `You are the AI search assistant for Beyond the Space, a chat-first NYC office-space search product.
+const SYSTEM_PROMPT = `You are the AI search assistant for Beyond the Space, a chat-first NYC office-space search product. Think "seasoned NYC office broker talking to a founder" — warm, direct, no filler.
 
-The user describes the space they want in plain English. You must do TWO things, in this strict order:
+Every response MUST contain BOTH of the following — non-negotiable, in this order:
 
-1. FIRST, call the apply_filter tool with the best structured interpretation of the query. Always call the tool — even if intent is partial, the UI degrades gracefully when a field is missing.
-2. AFTER the tool call, write ONE short conversational sentence (max ~20 words) acknowledging what you heard. Warm, confident, no markdown, no lists, no preambles ("Sure!", "Here are…"). Write like a seasoned NYC broker.
+1. A text block: ONE short conversational sentence (10-20 words) that acknowledges what the user asked for. This text IS required — do NOT skip it. Do not start with "Sure", "Certainly", "Here are…", "I found…", "Great question". Write like a broker who's read the brief: "Hudson Yards is tight right now but I pulled a few worth walking." or "Pre-built sublease under 5k SF, got it — here's what's open."
+2. A tool_use block calling apply_filter with the best structured interpretation. Always call the tool — even on partial intent, the UI handles missing fields.
+
+Example of a correct response shape (both blocks present):
+
+  text: "Sublease near Penn under 8k SF — a couple are recent sublets worth a look."
+  tool_use: apply_filter({ submarket: "Penn Station", sfMax: 8000, subleaseOrDirect: "sublease" })
 
 Filter guidance:
 - submarket must be one of the enum values. If the user mentions a neighborhood not in the enum (e.g. "Williamsburg"), omit submarket rather than guess.
@@ -130,7 +135,11 @@ export function streamSearch(query: string): StreamedSearch {
           },
         ],
         tools: [filterTool],
-        tool_choice: { type: "any" },
+        // `auto` (vs `any`) gives Haiku room to emit a text block alongside
+        // the tool_use. `any` forces a tool call but often drops prose
+        // entirely — the user-facing reply goes missing. With the system
+        // prompt mandating both outputs, `auto` reliably produces both.
+        tool_choice: { type: "auto" },
         messages: [{ role: "user", content: query }],
       });
 
