@@ -2,7 +2,13 @@ import Link from "next/link";
 import type { Listing } from "@/lib/listings";
 import { formatSf, formatPricePerSf } from "@/lib/listings";
 
-export default function ListingCard({ listing }: { listing: Listing }) {
+export default function ListingCard({
+  listing,
+  priority = false,
+}: {
+  listing: Listing;
+  priority?: boolean;
+}) {
   const badgeTone =
     listing.type === "sublease"
       ? "bg-accent/10 text-accent border-accent/30"
@@ -18,7 +24,12 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         <img
           src={listing.heroImage}
           alt={`${listing.address} ${listing.unit}`}
-          loading="lazy"
+          width={800}
+          height={600}
+          loading={priority ? "eager" : "lazy"}
+          decoding="async"
+          fetchPriority={priority ? "high" : "auto"}
+          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
           className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
         />
         <span
@@ -54,5 +65,18 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+export function ListingCardSkeleton() {
+  return (
+    <div className="rounded-2xl border border-border bg-bg-elevated overflow-hidden">
+      <div className="aspect-[4/3] bg-border animate-pulse" />
+      <div className="p-5 space-y-3">
+        <div className="h-3 w-1/3 rounded-full bg-border animate-pulse" />
+        <div className="h-5 w-3/4 rounded-full bg-border animate-pulse" />
+        <div className="h-3 w-1/2 rounded-full bg-border animate-pulse" />
+      </div>
+    </div>
   );
 }

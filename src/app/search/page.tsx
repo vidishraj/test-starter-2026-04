@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import AIBubble from "@/components/ai-bubble";
-import ListingCard from "@/components/listing-card";
+import AIBubble, { BubbleSkeleton, TypingDots } from "@/components/ai-bubble";
+import ListingCard, { ListingCardSkeleton } from "@/components/listing-card";
 import HeroSearch from "@/components/hero-search";
 import { LISTINGS, applyFilter } from "@/lib/listings";
-import { parseSearch } from "@/lib/ai/search";
+import { streamSearch, type StreamedSearch } from "@/lib/ai/search";
 
 type SearchParams = { q?: string };
 
@@ -41,18 +42,9 @@ export default async function SearchPage({
   const query = (q ?? "").trim();
   if (!query) redirect("/");
 
-  const parse = await parseSearch(query);
-  let results = applyFilter(LISTINGS, parse.filter);
-
-  // Graceful degradation: if the LLM zeroed out on submarket or filter,
-  // drop back to all listings and annotate the bubble. Spec calls this out.
-  let notice = parse.notice;
-  if (results.length === 0) {
-    results = LISTINGS;
-    notice =
-      notice ??
-      "No exact matches — showing the full catalog so you can refine from here.";
-  }
+  // Fire the stream once; both Suspense boundaries below await different
+  // resolution points on the same underlying request.
+  const stream = streamSearch(query);
 
   return (
     <main className="flex-1 bg-bg">
@@ -65,30 +57,18 @@ export default async function SearchPage({
         </h1>
 
         <div className="mt-8">
-          <AIBubble
-            reply={parse.reply}
-            notice={notice}
-            resultCount={results.length}
-            filter={parse.filter}
-          />
+          <Suspense fallback={<BubbleSkeleton />}>
+            <ResolvedBubble stream={stream} />
+          </Suspense>
         </div>
 
         <section className="mt-10">
-          <div className="flex items-end justify-between mb-5">
-            <h2 className="font-display text-xl tracking-tight text-ink">
-              {results.length === LISTINGS.length
-                ? "All available listings"
-                : "Matching listings"}
-            </h2>
-            <p className="text-sm text-muted">
-              {results.length} of {LISTINGS.length}
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {results.map((l) => (
-              <ListingCard key={l.id} listing={l} />
-            ))}
-          </div>
+          <Suspense fallback={<CardsHeadingSkeleton />}>
+            <ResolvedCardsHeading stream={stream} />
+          </Suspense>
+          <Suspense fallback={<CardsGridSkeleton />}>
+            <ResolvedCards stream={stream} />
+          </Suspense>
         </section>
 
         <section className="mt-16 border-t border-border pt-10">
@@ -109,5 +89,83 @@ export default async function SearchPage({
         </section>
       </div>
     </main>
+  );
+}
+
+async function ResolvedBubble({ stream }: { stream: StreamedSearch }) {
+  const resolved = await stream.filterPromise;
+  const matches = applyFilter(LISTINGS, resolved.filter);
+  const count = matches.length > 0 ? matches.length : LISTINGS.length;
+
+  return (
+    <AIBubble
+      filter={resolved.filter}
+      notice={resolved.notice}
+      resultCount={count}
+    >
+      <Suspense fallback={<TypingDots />}>
+        <ResolvedReply replyPromise={stream.replyPromise} />
+      </Suspense>
+    </AIBubble>
+  );
+}
+
+async function ResolvedReply({
+  replyPromise,
+}: {
+  replyPromise: Promise<string>;
+}) {
+  const reply = await replyPromise;
+  return <p>{reply}</p>;
+}
+
+async function ResolvedCardsHeading({ stream }: { stream: StreamedSearch }) {
+  const resolved = await stream.filterPromise;
+  const matches = applyFilter(LISTINGS, resolved.filter);
+  const showingAll = matches.length === 0;
+  const count = showingAll ? LISTINGS.length : matches.length;
+  return (
+    <div className="flex items-end justify-between mb-5">
+      <h2 className="font-display text-xl tracking-tight text-ink">
+        {showingAll ? "All available listings" : "Matching listings"}
+      </h2>
+      <p className="text-sm text-muted">
+        {count} of {LISTINGS.length}
+      </p>
+    </div>
+  );
+}
+
+async function ResolvedCards({ stream }: { stream: StreamedSearch }) {
+  const resolved = await stream.filterPromise;
+  let results = applyFilter(LISTINGS, resolved.filter);
+  // Graceful degradation: empty filter result → fall back to full catalog.
+  if (results.length === 0) results = LISTINGS;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {results.map((l, i) => (
+        <ListingCard key={l.id} listing={l} priority={i < 3} />
+      ))}
+    </div>
+  );
+}
+
+function CardsHeadingSkeleton() {
+  return (
+    <div className="flex items-end justify-between mb-5">
+      <div className="h-6 w-48 rounded-full bg-border animate-pulse" />
+      <div className="h-3 w-16 rounded-full bg-border animate-pulse" />
+    </div>
+  );
+}
+
+function CardsGridSkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <ListingCardSkeleton key={i} />
+      ))}
+    </div>
   );
 }

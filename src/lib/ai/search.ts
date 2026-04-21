@@ -7,29 +7,40 @@ import {
 } from "@/lib/listings";
 
 /**
- * Single Anthropic call that returns (a) a short conversational reply and
- * (b) a structured filter, in one response. We rely on Haiku 4.5 — the task
- * is parse + paraphrase, not synthesis, so Sonnet is wasted spend.
+ * Single streamed Anthropic call that fans out into two independently-
+ * resolving promises:
  *
- * tool_choice "any" forces the model to call the single registered tool.
- * Text blocks may still precede tool_use in the response, which is how we
- * get the conversational reply in the same call.
+ *   - filterPromise resolves the moment the `apply_filter` tool_use block
+ *     finishes. Downstream, this unblocks the listing-card grid so cards
+ *     render as soon as we know what to show.
+ *
+ *   - replyPromise resolves when the conversational text block finishes.
+ *     It fills the AI bubble under a nested Suspense.
+ *
+ * The system prompt is ordered so tool_use is emitted BEFORE text — that
+ * way the filter lands well ahead of the prose and cards don't have to
+ * wait on synthesis. The React tree uses two Suspense boundaries to stream
+ * the two resolutions independently.
+ *
+ * Model: Haiku 4.5. This is parse + paraphrase, not synthesis — Sonnet is
+ * wasted spend. System prompt carries an ephemeral cache_control so repeat
+ * traffic pays cached read prices.
  */
 
 const MODEL = "claude-haiku-4-5-20251001";
 
 const SYSTEM_PROMPT = `You are the AI search assistant for Beyond the Space, a chat-first NYC office-space search product.
 
-The user describes the space they want in plain English. Your job is two things, in one response:
+The user describes the space they want in plain English. You must do TWO things, in this strict order:
 
-1. Write ONE short conversational sentence (max ~20 words) acknowledging what you heard. Warm, confident, no markdown, no lists, no preambles like "Sure!". Write as if you were a seasoned broker replying.
-2. Call the apply_filter tool with the best structured interpretation of the query. Always call the tool, even if intent is partial — the UI falls back gracefully when a field is missing.
+1. FIRST, call the apply_filter tool with the best structured interpretation of the query. Always call the tool — even if intent is partial, the UI degrades gracefully when a field is missing.
+2. AFTER the tool call, write ONE short conversational sentence (max ~20 words) acknowledging what you heard. Warm, confident, no markdown, no lists, no preambles ("Sure!", "Here are…"). Write like a seasoned NYC broker.
 
-Guidance for the filter:
-- submarket must be one of the enum values. If the user mentions a neighborhood you don't have (e.g. "Williamsburg"), omit submarket entirely rather than guess.
-- sfMin/sfMax: infer from headcount when useful (~200 SF per person for creative offices, ~250 SF for professional services). "10k SF" means ~10000; add a ±20% window unless the user is specific.
-- features: free-text short phrases that might match listing features — "outdoor", "furnished", "pre-built", "column-free", "natural light", etc. Keep to ≤3.
-- subleaseOrDirect: "sublease" or "direct" only if the user explicitly said so; otherwise "any".`;
+Filter guidance:
+- submarket must be one of the enum values. If the user mentions a neighborhood not in the enum (e.g. "Williamsburg"), omit submarket rather than guess.
+- sfMin/sfMax: infer from headcount when useful (~200 SF/person creative, ~250 SF/person professional services). "10k SF" → ~10000; add ±20% unless the user is precise.
+- features: up to 3 free-text phrases that can fuzzy-match listing features ("outdoor", "furnished", "pre-built", "column-free", "natural light").
+- subleaseOrDirect: "sublease" or "direct" only if the user said so; otherwise "any".`;
 
 const filterSchema = z.object({
   submarket: z.string().nullish(),
@@ -49,109 +60,151 @@ const filterTool: Anthropic.Tool = {
       submarket: {
         type: "string",
         enum: [...SUBMARKETS],
-        description: "Canonical NYC submarket. Omit if user's locale is unclear or unsupported.",
+        description:
+          "Canonical NYC submarket. Omit if the user's locale is unclear or outside the enum.",
       },
-      sfMin: {
-        type: "number",
-        description: "Minimum square feet.",
-      },
-      sfMax: {
-        type: "number",
-        description: "Maximum square feet.",
-      },
+      sfMin: { type: "number", description: "Minimum square feet." },
+      sfMax: { type: "number", description: "Maximum square feet." },
       features: {
         type: "array",
         items: { type: "string" },
         description:
-          "Short free-text feature phrases that should fuzzy-match listing features.",
+          "Up to 3 short free-text feature phrases for fuzzy matching.",
       },
       subleaseOrDirect: {
         type: "string",
         enum: ["sublease", "direct", "any"],
-        description: "Lease type preference. Default to 'any' unless stated.",
+        description: "Lease type preference. Default 'any' unless stated.",
       },
     },
     required: [],
   },
 };
 
-export type ParseResult = {
-  reply: string;
+export type ResolvedFilter = {
   filter: ListingFilter;
   source: "llm" | "fallback";
   notice?: string;
 };
 
-export async function parseSearch(query: string): Promise<ParseResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+export type StreamedSearch = {
+  filterPromise: Promise<ResolvedFilter>;
+  replyPromise: Promise<string>;
+};
+
+export function streamSearch(query: string): StreamedSearch {
+  // No API key → resolve both with the heuristic fallback immediately.
+  // UI still renders cards + bubble, plus a visible notice explaining why.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const h = heuristicFallback(query);
     return {
-      ...heuristicFallback(query),
-      notice: "AI parse is offline — using a basic keyword match.",
+      filterPromise: Promise.resolve({
+        filter: h.filter,
+        source: "fallback",
+        notice: "AI parse is offline — using a basic keyword match.",
+      }),
+      replyPromise: Promise.resolve(h.reply),
     };
   }
 
-  try {
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 400,
-      temperature: 0.2,
-      system: [
-        {
-          type: "text",
-          text: SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      tools: [filterTool],
-      tool_choice: { type: "any" },
-      messages: [{ role: "user", content: query }],
-    });
+  let resolveFilter!: (r: ResolvedFilter) => void;
+  let resolveReply!: (r: string) => void;
+  const filterPromise = new Promise<ResolvedFilter>((r) => (resolveFilter = r));
+  const replyPromise = new Promise<string>((r) => (resolveReply = r));
 
-    let reply = "";
-    let rawFilter: unknown = null;
-    for (const block of response.content) {
-      if (block.type === "text") reply += block.text;
-      if (block.type === "tool_use" && block.name === "apply_filter") {
-        rawFilter = block.input;
+  let filterSettled = false;
+  let replySettled = false;
+
+  (async () => {
+    try {
+      const client = new Anthropic();
+      const stream = client.messages.stream({
+        model: MODEL,
+        max_tokens: 500,
+        temperature: 0.2,
+        system: [
+          {
+            type: "text",
+            text: SYSTEM_PROMPT,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        tools: [filterTool],
+        tool_choice: { type: "any" },
+        messages: [{ role: "user", content: query }],
+      });
+
+      // Resolve filterPromise the moment the tool_use block finishes.
+      // Resolve replyPromise the moment a text block finishes.
+      stream.on("contentBlock", (block) => {
+        if (block.type === "tool_use" && block.name === "apply_filter" && !filterSettled) {
+          const parsed = filterSchema.safeParse(block.input);
+          if (parsed.success) {
+            filterSettled = true;
+            resolveFilter({
+              filter: {
+                submarket: parsed.data.submarket ?? null,
+                sfMin: parsed.data.sfMin ?? null,
+                sfMax: parsed.data.sfMax ?? null,
+                features: parsed.data.features ?? null,
+                subleaseOrDirect: parsed.data.subleaseOrDirect ?? "any",
+              },
+              source: "llm",
+            });
+          }
+        }
+        if (block.type === "text" && !replySettled) {
+          const text = block.text.trim();
+          if (text) {
+            replySettled = true;
+            resolveReply(text);
+          }
+        }
+      });
+
+      await stream.finalMessage();
+
+      // Post-stream fallbacks for anything that never settled.
+      if (!filterSettled) {
+        const h = heuristicFallback(query);
+        filterSettled = true;
+        resolveFilter({
+          filter: h.filter,
+          source: "fallback",
+          notice: "I had trouble parsing that — showing a broader match.",
+        });
+      }
+      if (!replySettled) {
+        replySettled = true;
+        resolveReply(defaultReplyFor(query));
+      }
+    } catch (err) {
+      console.error("[streamSearch] LLM stream failed:", err);
+      const h = heuristicFallback(query);
+      if (!filterSettled) {
+        filterSettled = true;
+        resolveFilter({
+          filter: h.filter,
+          source: "fallback",
+          notice: "AI is temporarily unavailable — showing a keyword match.",
+        });
+      }
+      if (!replySettled) {
+        replySettled = true;
+        resolveReply(h.reply);
       }
     }
+  })();
 
-    const parsed = filterSchema.safeParse(rawFilter);
-    if (!parsed.success) {
-      return {
-        ...heuristicFallback(query),
-        notice: "I had trouble parsing that — showing a broader match.",
-      };
-    }
-
-    return {
-      reply: reply.trim() || defaultReplyFor(query),
-      filter: {
-        submarket: parsed.data.submarket ?? null,
-        sfMin: parsed.data.sfMin ?? null,
-        sfMax: parsed.data.sfMax ?? null,
-        features: parsed.data.features ?? null,
-        subleaseOrDirect: parsed.data.subleaseOrDirect ?? "any",
-      },
-      source: "llm",
-    };
-  } catch (err) {
-    console.error("[parseSearch] LLM call failed:", err);
-    return {
-      ...heuristicFallback(query),
-      notice: "AI is temporarily unavailable — showing a keyword match.",
-    };
-  }
+  return { filterPromise, replyPromise };
 }
 
 /**
  * Regex/keyword fallback for when the LLM is unavailable. Deliberately
  * coarse — enough to return a useful result, not enough to pretend it's
- * the real parser. Surfaced to the user via `notice`.
+ * the real parser. Surfaced to the user via the bubble's `notice` line.
  */
-function heuristicFallback(query: string): ParseResult {
+function heuristicFallback(query: string): { filter: ListingFilter; reply: string } {
   const q = query.toLowerCase();
 
   let submarket: string | null = null;
@@ -166,7 +219,9 @@ function heuristicFallback(query: string): ParseResult {
     if (alias) submarket = alias;
   }
 
-  const sfMatch = q.match(/(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|sf|sqft|square\s*feet)?/);
+  const sfMatch = q.match(
+    /(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|sf|sqft|square\s*feet)?/,
+  );
   let sfTarget: number | null = null;
   if (sfMatch) {
     const num = parseFloat(sfMatch[1].replace(/,/g, ""));
@@ -178,11 +233,10 @@ function heuristicFallback(query: string): ParseResult {
   const subleaseOrDirect: ListingFilter["subleaseOrDirect"] = q.includes("sublease")
     ? "sublease"
     : q.includes("direct")
-    ? "direct"
-    : "any";
+      ? "direct"
+      : "any";
 
   return {
-    reply: defaultReplyFor(query),
     filter: {
       submarket,
       sfMin: sfTarget ? Math.round(sfTarget * 0.8) : null,
@@ -190,7 +244,7 @@ function heuristicFallback(query: string): ParseResult {
       features: null,
       subleaseOrDirect,
     },
-    source: "fallback",
+    reply: defaultReplyFor(query),
   };
 }
 
