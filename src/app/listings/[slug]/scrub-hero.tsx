@@ -73,6 +73,15 @@ export default function ScrubHero({ slides, address, unit }: Props) {
   };
 
   // Pointer drag — mouse-only. Touch already gets native scroll-snap.
+  //
+  // Smoothness notes:
+  //   * scrollLeft writes are coalesced into a single rAF frame per tick —
+  //     multiple pointermove events in one frame collapse to one DOM write.
+  //   * Velocity is sampled in a rolling 4-point buffer. On release, if the
+  //     user was flicking, we resolve to the adjacent slide in the flick
+  //     direction instead of just the nearest — feels like a native swipe.
+  //   * scroll-snap stays disabled for the whole drag; we restore it after
+  //     smooth-scrolling to the final slide so the browser doesn't fight us.
   useLayoutEffect(() => {
     const el = trackRef.current;
     if (!el) return;
@@ -80,19 +89,37 @@ export default function ScrubHero({ slides, address, unit }: Props) {
     let startX = 0;
     let startScroll = 0;
     let pointerId: number | null = null;
+    let rafId: number | null = null;
+    let pendingScroll = 0;
+    let lastX = 0;
+    let lastTs = 0;
+    const velocitySamples: { dx: number; dt: number }[] = [];
+
+    const flushScroll = () => {
+      rafId = null;
+      el.scrollLeft = pendingScroll;
+    };
+
+    const queueScroll = (next: number) => {
+      pendingScroll = next;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(flushScroll);
+      }
+    };
 
     const down = (e: PointerEvent) => {
       if (e.pointerType !== "mouse") return;
-      // Avoid starting a drag on an interactive control (buttons for prev/next, dots)
       const target = e.target as HTMLElement;
       if (target.closest("button")) return;
       pointerId = e.pointerId;
       startX = e.clientX;
       startScroll = el.scrollLeft;
+      lastX = e.clientX;
+      lastTs = performance.now();
+      velocitySamples.length = 0;
       setIsDragging(true);
-      // Disable scroll-snap while the user is actively dragging, otherwise
-      // Chrome / Safari fight the imperative scrollLeft by snapping back.
       el.style.scrollSnapType = "none";
+      el.style.scrollBehavior = "auto"; // never fight our rAF loop with native smoothing
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
@@ -100,20 +127,52 @@ export default function ScrubHero({ slides, address, unit }: Props) {
       }
       e.preventDefault();
     };
+
     const move = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
-      el.scrollLeft = startScroll - (e.clientX - startX);
+      const now = performance.now();
+      const dx = e.clientX - lastX;
+      const dt = now - lastTs;
+      if (dt > 0) {
+        velocitySamples.push({ dx, dt });
+        if (velocitySamples.length > 4) velocitySamples.shift();
+      }
+      lastX = e.clientX;
+      lastTs = now;
+      queueScroll(startScroll - (e.clientX - startX));
       e.preventDefault();
     };
+
     const up = (e: PointerEvent) => {
       if (pointerId !== e.pointerId) return;
       pointerId = null;
       setIsDragging(false);
-      // Restore scroll-snap and nudge to the nearest slide.
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       el.style.scrollSnapType = "";
+      el.style.scrollBehavior = "";
+
+      // Compute velocity (px/ms) from the rolling window
+      let totalDx = 0;
+      let totalDt = 0;
+      for (const s of velocitySamples) {
+        totalDx += s.dx;
+        totalDt += s.dt;
+      }
+      const velocity = totalDt > 0 ? totalDx / totalDt : 0; // px/ms; + = dragging right, - = left
       const slideWidth = el.clientWidth;
-      const snapTo = Math.round(el.scrollLeft / slideWidth);
-      el.scrollTo({ left: snapTo * slideWidth, behavior: "smooth" });
+      const raw = el.scrollLeft / slideWidth;
+      let target = Math.round(raw);
+
+      // Flick threshold: ~0.35 px/ms sustained = "user was swiping"
+      const FLICK = 0.35;
+      if (velocity < -FLICK) target = Math.ceil(raw); // flicked left → next slide right
+      else if (velocity > FLICK) target = Math.floor(raw); // flicked right → previous slide
+
+      target = Math.max(0, Math.min(slides.length - 1, target));
+      el.scrollTo({ left: target * slideWidth, behavior: "smooth" });
     };
 
     el.addEventListener("pointerdown", down);
@@ -125,8 +184,9 @@ export default function ScrubHero({ slides, address, unit }: Props) {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [slides.length]);
 
   return (
     <div className="relative bg-ink/[0.04] border-y border-border select-none">

@@ -115,38 +115,41 @@ export default async function DashboardPage() {
           <NLQuery />
         </div>
 
-        <section className="mt-8 grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <div className="lg:col-span-3">
-            <div className="flex items-end justify-between mb-4">
-              <h2 className="font-display text-2xl tracking-tight text-ink">
-                Rent roll
-              </h2>
-              <p className="text-xs uppercase tracking-[0.12em] text-muted-2">
-                Click any column header to sort
-              </p>
-            </div>
-            <RentRollTable rows={rentRollForClient} />
+        <section className="mt-8">
+          <div className="flex items-end justify-between mb-4">
+            <h2 className="font-display text-2xl tracking-tight text-ink">
+              Rent roll
+            </h2>
+            <p className="text-xs uppercase tracking-[0.12em] text-muted-2">
+              {rentRollForClient.length} active leases · click any column header to sort
+            </p>
           </div>
+          <RentRollTable rows={rentRollForClient} />
+        </section>
+
+        <section className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-6">
           <div className="lg:col-span-2">
             <div className="flex items-end justify-between mb-4">
               <h2 className="font-display text-2xl tracking-tight text-ink">
                 AR aging
               </h2>
               <p className="text-xs uppercase tracking-[0.12em] text-muted-2">
-                Click a tenant for payment history
+                Click a tenant
               </p>
             </div>
             <ARAging summary={arAging} />
           </div>
-        </section>
-
-        <section className="mt-10">
-          <div className="flex items-end justify-between mb-4">
-            <h2 className="font-display text-2xl tracking-tight text-ink">
-              Operating expenses
-            </h2>
+          <div className="lg:col-span-3">
+            <div className="flex items-end justify-between mb-4">
+              <h2 className="font-display text-2xl tracking-tight text-ink">
+                Operating expenses
+              </h2>
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-2">
+                Trailing 12 months
+              </p>
+            </div>
+            <ExpenseChart series={expenses} />
           </div>
-          <ExpenseChart series={expenses} />
         </section>
       </div>
     </main>

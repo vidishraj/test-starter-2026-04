@@ -80,9 +80,9 @@ export default function RentRollTable({ rows }: { rows: Row[] }) {
 
   return (
     <div className="rounded-2xl border border-border bg-bg-elevated overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[640px]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-border bg-bg">
               <Th onClick={() => toggle("tenantName")} active={sortKey === "tenantName"} asc={asc}>Tenant</Th>
               <Th onClick={() => toggle("buildingName")} active={sortKey === "buildingName"} asc={asc}>Building</Th>
