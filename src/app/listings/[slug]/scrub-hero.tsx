@@ -137,10 +137,13 @@ export default function ScrubHero({ slides, address, unit }: Props) {
               src={s.src}
               alt={s.label}
               draggable={false}
+              width={s.kind === "floorplan" ? 1200 : 1600}
+              height={s.kind === "floorplan" ? 800 : 1000}
               loading={Math.abs(i - index) <= 1 ? "eager" : "lazy"}
-              className={`h-full w-full object-contain ${
-                s.kind === "floorplan" ? "bg-bg-elevated" : "bg-bg-elevated"
-              } rounded-lg border border-border pointer-events-none`}
+              decoding="async"
+              fetchPriority={i === 0 ? "high" : "auto"}
+              sizes="(min-width: 1280px) 1280px, 100vw"
+              className="h-full w-full object-contain bg-bg-elevated rounded-lg border border-border pointer-events-none"
             />
           </div>
         ))}

@@ -197,6 +197,11 @@ export default async function ListingPage({
               <img
                 src={listing.floorplan}
                 alt={`Floor plan for ${listing.address} ${listing.unit}`}
+                width={1200}
+                height={800}
+                loading="lazy"
+                decoding="async"
+                sizes="(min-width: 1024px) 700px, 100vw"
                 className="w-full h-auto max-h-[520px] object-contain"
               />
             </div>
