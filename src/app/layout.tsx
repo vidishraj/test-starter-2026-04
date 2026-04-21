@@ -59,13 +59,26 @@ export default function RootLayout({
             <Link href="/" className="font-display text-[19px] tracking-tight text-ink">
               Beyond the Space<span className="text-accent">.</span>
             </Link>
-            <nav className="flex items-center gap-6 text-sm text-muted">
+            <nav className="flex items-center gap-5 sm:gap-6 text-sm text-muted">
               <Link href="/search" className="hover:text-fg transition-colors">
                 Search
               </Link>
-              <span className="text-muted-2 cursor-not-allowed" aria-disabled>
-                For brokers
-              </span>
+              <Link
+                href="/office-space"
+                className="hidden sm:inline hover:text-fg transition-colors"
+              >
+                Submarkets
+              </Link>
+              <span className="hidden sm:inline text-border-strong">·</span>
+              <Link href="/import" className="hover:text-fg transition-colors">
+                Import
+              </Link>
+              <Link
+                href="/dashboard"
+                className="hover:text-fg transition-colors"
+              >
+                Dashboard
+              </Link>
             </nav>
           </div>
         </header>
